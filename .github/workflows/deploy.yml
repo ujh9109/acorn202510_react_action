@@ -1,0 +1,66 @@
+name: Build & Deploy React (Hello EC2)
+
+# master 브랜치에 commit이 push될 때 동작
+on:
+  push:
+    branches: [ master ]
+
+
+permissions:
+  contents: read
+
+
+concurrency:
+  group: deploy-react-ec2-${{ github.ref }}
+  cancel-in-progress: true
+
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+
+      - name: Install deps
+        run: npm ci
+
+
+      - name: Build (Vite)
+        run: npm run build   # 결과물: ./dist
+
+
+      - name: Clean remote dir
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            DEPLOY_DIR="/home/ec2-user/nginx/nginx-html"
+            mkdir -p "$DEPLOY_DIR"
+            rm -rf "$DEPLOY_DIR"/*
+
+
+      - name: Upload dist to EC2 (strip folder)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          source:   "dist/**"                 # 하위 전체
+          target:   "/home/ec2-user/nginx/nginx-html"
+          strip_components: 1                 # dist/ 제거 → 내용만 배치
